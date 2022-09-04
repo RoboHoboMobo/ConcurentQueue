@@ -50,7 +50,7 @@ ConcurentQueue<T, ContainerType>::ConcurentQueue(const ConcurentQueue& other)
 {
     std::lock_guard<std::mutex> lock{other.m_mutex};
 
-    m_container = other;
+    m_container = other.m_container;
 }
 
 template <typename T, typename ContainerType>
@@ -58,7 +58,9 @@ ConcurentQueue<T, ContainerType>::ConcurentQueue(ConcurentQueue&& other)
 {
     std::lock_guard<std::mutex> lock{other.m_mutex};
 
-    m_container = std::move(other);
+    m_container = std::move(other.m_container);
+    m_mutex = std::move(other.m_mutex);
+    m_condition = std::move(other.m_condition);
 }
 
 template <typename T, typename ContainerType>
@@ -85,7 +87,11 @@ template <typename T, typename ContainerType>
 template <typename... Args>
 void ConcurentQueue<T, ContainerType>::emplace(Args&&... args)
 {
+    std::lock_guard<std::mutex> lock{m_mutex};
+
     m_container.emplace(std::forward<Args>(args)...);
+
+    m_condition.notify_one();
 }
 
 template <typename T, typename ContainerType>
@@ -124,7 +130,7 @@ std::shared_ptr<T> ConcurentQueue<T, ContainerType>::waitAndPop()
     std::unique_lock<std::mutex> lock{m_mutex};
 
     m_condition.wait(lock, [this]() {
-        return !m_container.empty;
+        return !m_container.empty();
     });
 
     auto result = std::make_shared<T>(m_container.front());
@@ -139,7 +145,7 @@ void ConcurentQueue<T, ContainerType>::waitAndPop(T& value)
     std::unique_lock<std::mutex> lock{m_mutex};
 
     m_condition.wait(lock, [this]() {
-        return !m_container.empty;
+        return !m_container.empty();
     });
 
     value = m_container.front();
